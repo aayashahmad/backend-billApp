@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, List
 
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 # ── Auth ─────────────────────────────────────────────────────────────
@@ -93,11 +93,19 @@ class BillOut(BaseModel):
     amount_paid: Optional[float] = None
     unbalance: Optional[float] = None
     transaction_number: Optional[str] = None
-    transaction_screenshot_url: Optional[str] = None
+    # Sourced from Bill.screenshot_path, which points at the authenticated
+    # download endpoint for stored images and falls back to the legacy static
+    # path for rows predating database storage. The field keeps its original
+    # name so existing clients need no change.
+    transaction_screenshot_url: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "screenshot_path", "transaction_screenshot_url"
+        ),
+    )
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class CustomerWithBills(CustomerOut):

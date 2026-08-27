@@ -1,7 +1,10 @@
+from typing import Optional
+
 from sqlalchemy import (
     Column,
     Integer,
     String,
+    LargeBinary,
     Numeric,
     DateTime,
     ForeignKey,
@@ -86,7 +89,30 @@ class Bill(Base):
     amount_paid = Column(Numeric(12, 2), nullable=True)
     unbalance = Column(Numeric(12, 2), nullable=True)
     transaction_number = Column(String(255), nullable=True)
+    # Legacy: path of a screenshot written to the local uploads directory.
+    # Kept so pre-existing rows still resolve; new uploads go to the columns
+    # below instead.
     transaction_screenshot_url = Column(String(500), nullable=True)
+
+    # Payment screenshots live in the database rather than on disk: hosted
+    # filesystems are ephemeral, so disk-backed images vanish on every deploy.
+    # Storing the bytes here also lets the download be ownership-checked
+    # instead of served from a public static mount.
+    screenshot_data = Column(LargeBinary, nullable=True)
+    screenshot_mime = Column(String(100), nullable=True)
+
     created_at = Column(DateTime, server_default=func.now())
 
     customer = relationship("Customer", back_populates="bills")
+
+    @property
+    def screenshot_path(self) -> Optional[str]:
+        """
+        Where the client should fetch this bill's screenshot.
+
+        Stored images resolve to an authenticated endpoint; legacy rows keep
+        pointing at their old static path.
+        """
+        if self.screenshot_data is not None:
+            return f"api/bills/{self.id}/screenshot"
+        return self.transaction_screenshot_url

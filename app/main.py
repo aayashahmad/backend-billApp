@@ -1,9 +1,6 @@
-import os
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app.database import engine
@@ -23,12 +20,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve uploaded images as static files. The directory is created first —
-# StaticFiles raises on startup if it is missing, which is the normal state
-# of a freshly deployed checkout.
-UPLOADS_DIR = os.getenv("UPLOADS_DIR", "uploads")
-os.makedirs(UPLOADS_DIR, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
+# Payment screenshots are NOT served as static files. They used to be, which
+# meant any shop's payment records were readable by anyone holding the URL.
+# They now live in the database and are downloaded through
+# GET /api/bills/{id}/screenshot, which checks ownership.
 
 # Include routers.
 app.include_router(auth.router)
