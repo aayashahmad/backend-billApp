@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+
+# Environment
+.env
+
+# Uploads (keep dir, ignore contents)
+uploads/*
+!uploads/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Claude Code local overrides (machine-specific paths)
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
