@@ -1,0 +1,46 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Leave the "Blueprint Path" field EMPTY in the Render UI: this file sits at
+# the repository root, which is where Render looks by default.
+
+databases:
+  - name: billing-db
+    databaseName: billing
+    user: billing
+    plan: free
+
+services:
+  - type: web
+    name: billing-api
+    runtime: python
+    plan: free
+    region: oregon
+    branch: main
+
+    buildCommand: pip install -r requirements.txt
+    # Render injects $PORT; binding anywhere else makes the deploy time out.
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
+    # Marks a deploy live only once Postgres actually answers, so a broken
+    # database connection fails the deploy instead of serving 500s.
+    healthCheckPath: /health
+
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: billing-db
+          property: connectionString
+
+      # Signs the JWTs. Generated once by Render and never in the repo.
+      # Changing it invalidates every issued token.
+      - key: SECRET_KEY
+        generateValue: true
+
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+
+      # NOTE: the free plan has an ephemeral filesystem — uploaded payment
+      # screenshots are deleted on every deploy and restart. See README for
+      # the persistent-disk and object-storage options.
+      - key: UPLOADS_DIR
+        value: uploads

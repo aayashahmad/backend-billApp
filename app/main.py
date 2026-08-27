@@ -2,7 +2,9 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from app.database import engine
 from app.models import Base
@@ -33,3 +35,41 @@ app.include_router(auth.router)
 app.include_router(business.router)
 app.include_router(customers.router)
 app.include_router(bills.router)
+
+
+@app.get("/", tags=["health"])
+def root():
+    """
+    Signpost for anyone opening the server root in a browser.
+
+    Every real endpoint lives under /api, so without this the root returns a
+    bare 404 that reads like the server is broken when it is fine.
+    """
+    return {
+        "service": "Billing API",
+        "status": "ok",
+        "docs": "/docs",
+        "health": "/health",
+        "api_root": "/api",
+    }
+
+
+@app.get("/health", tags=["health"])
+def health():
+    """
+    Liveness + database check.
+
+    Returns 503 rather than 200 when the database is unreachable, so this is
+    safe to point a container healthcheck or uptime monitor at.
+    """
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        database = "ok"
+    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "database": f"unreachable: {exc}"},
+        )
+
+    return {"status": "ok", "database": database}
