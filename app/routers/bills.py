@@ -26,6 +26,18 @@ UPLOADS_DIR = os.getenv("UPLOADS_DIR", "uploads")
 # and the backups along with it.
 MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024
 
+# Cash and cheque record an amount the user enters; an online transfer settles
+# the bill in full. Cheque is treated like cash on purpose — it is often
+# written for part of the balance and it can bounce, so recording the figure
+# is more truthful than assuming settlement.
+PAYMENT_CASH = "cash"
+PAYMENT_ONLINE = "online"
+PAYMENT_CHEQUE = "cheque"
+PAYMENT_TYPES = (PAYMENT_CASH, PAYMENT_ONLINE, PAYMENT_CHEQUE)
+ENTERED_AMOUNT_TYPES = (PAYMENT_CASH, PAYMENT_CHEQUE)
+# Both carry a reference number: a UTR for online, a cheque number for cheque.
+REFERENCE_TYPES = (PAYMENT_ONLINE, PAYMENT_CHEQUE)
+
 
 # Registered on both "" and "/" so a multipart POST is never answered with a
 # 307 redirect — some HTTP clients drop the body when replaying a redirect.
@@ -46,6 +58,21 @@ async def create_bill(
     current_user: User = Depends(get_current_user),
 ):
     """Create a bill — finds or creates the customer, updates running totals."""
+    # Previously unvalidated: any string was accepted and stored, which meant
+    # a typo produced a bill the client could not classify.
+    if payment_type not in PAYMENT_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Unknown payment type '{payment_type}'. "
+                f"Expected one of: {', '.join(PAYMENT_TYPES)}."
+            ),
+        )
+
+    if payment_type in REFERENCE_TYPES and not (transaction_number or "").strip():
+        label = "Cheque number" if payment_type == PAYMENT_CHEQUE else "Transaction number"
+        raise HTTPException(status_code=422, detail=f"{label} is required.")
+
     bill_total = round(qty * rate, 2)
 
     # Find or create the customer *within this owner's* book. Scoping the
@@ -96,10 +123,10 @@ async def create_bill(
 
     # Calculate unbalance based on payment type
     unbalance = 0.0
-    if payment_type == "cash":
+    if payment_type in ENTERED_AMOUNT_TYPES:
         paid = amount_paid or 0.0
         unbalance = round(bill_total - paid, 2)
-    elif payment_type == "online":
+    else:
         amount_paid = bill_total
         unbalance = 0.0
 
