@@ -18,8 +18,19 @@ services:
     branch: main
 
     buildCommand: pip install -r requirements.txt
+
+    # Migrations run here, not in buildCommand: the build step has no access
+    # to the database, and `create_all` in app/main.py only creates missing
+    # tables — it never adds a column to a table that already exists. Without
+    # this, any schema change silently leaves production on the old shape and
+    # the first query touching the new column 500s.
+    #
+    # `&&` is load-bearing: a failed migration must abort the start so the
+    # deploy fails loudly, rather than serving traffic on a half-applied
+    # schema. Migrations are idempotent, so this is a no-op once applied.
+    #
     # Render injects $PORT; binding anywhere else makes the deploy time out.
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: python -m migrations.run_all && uvicorn app.main:app --host 0.0.0.0 --port $PORT
 
     # Marks a deploy live only once Postgres actually answers, so a broken
     # database connection fails the deploy instead of serving 500s.
