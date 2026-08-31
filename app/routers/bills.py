@@ -1,6 +1,7 @@
+import json
 import mimetypes
 import os
-from typing import Optional
+from typing import Any, List, Optional
 
 from fastapi import (
     APIRouter,
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import Customer, Bill, User
+from app.models import Customer, Bill, BillItem, User
 from app.schemas import BillCreateResponse
 
 router = APIRouter(prefix="/api/bills", tags=["bills"])
@@ -38,6 +39,95 @@ ENTERED_AMOUNT_TYPES = (PAYMENT_CASH, PAYMENT_CHEQUE)
 # Both carry a reference number: a UTR for online, a cheque number for cheque.
 REFERENCE_TYPES = (PAYMENT_ONLINE, PAYMENT_CHEQUE)
 
+# A bill with hundreds of lines is a client bug, not a real sale, and each one
+# costs a row.
+MAX_BILL_ITEMS = 50
+
+
+def _parse_items(
+    raw_items: Optional[str],
+    item_name: Optional[str],
+    qty: Optional[int],
+    rate: Optional[float],
+) -> List[dict]:
+    """
+    Normalise the request's line items to `[{item_name, qty, rate}, ...]`.
+
+    Accepts either the `items` JSON array (multi-item bills) or the original
+    flat `item_name`/`qty`/`rate` fields. Clients written before multi-item
+    bills send only the flat fields, so they keep working unchanged.
+    """
+    if raw_items:
+        try:
+            parsed: Any = json.loads(raw_items)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=422, detail="`items` must be a JSON array."
+            )
+
+        if not isinstance(parsed, list) or not parsed:
+            raise HTTPException(
+                status_code=422, detail="`items` must contain at least one item."
+            )
+
+        if len(parsed) > MAX_BILL_ITEMS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"A bill can hold at most {MAX_BILL_ITEMS} items.",
+            )
+
+        items = []
+        for index, entry in enumerate(parsed):
+            if not isinstance(entry, dict):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Item {index + 1} is not an object.",
+                )
+
+            name = str(entry.get("item_name") or "").strip()
+            if not name:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Item {index + 1} is missing a name.",
+                )
+
+            try:
+                entry_qty = int(entry.get("qty"))
+                entry_rate = float(entry.get("rate"))
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Item {index + 1} has an invalid quantity or rate.",
+                )
+
+            if entry_qty <= 0 or entry_rate <= 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"Item {index + 1} needs a quantity and rate "
+                        "greater than zero."
+                    ),
+                )
+
+            items.append({"item_name": name, "qty": entry_qty, "rate": entry_rate})
+
+        return items
+
+    # Legacy single-item request.
+    if not (item_name or "").strip():
+        raise HTTPException(status_code=422, detail="Item name is required.")
+    if qty is None or rate is None:
+        raise HTTPException(
+            status_code=422, detail="Quantity and rate are required."
+        )
+    if qty <= 0 or rate <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="Quantity and rate must be greater than zero.",
+        )
+
+    return [{"item_name": item_name.strip(), "qty": qty, "rate": rate}]
+
 
 # Registered on both "" and "/" so a multipart POST is never answered with a
 # 307 redirect — some HTTP clients drop the body when replaying a redirect.
@@ -47,9 +137,13 @@ REFERENCE_TYPES = (PAYMENT_ONLINE, PAYMENT_CHEQUE)
 async def create_bill(
     phone: str = Form(...),
     customer_name: str = Form(""),
-    item_name: str = Form(...),
-    qty: int = Form(...),
-    rate: float = Form(...),
+    # Multi-item bills send `items`; older clients send the three flat fields
+    # below. Exactly one of the two forms has to be present — `_parse_items`
+    # enforces that.
+    items: Optional[str] = Form(None),
+    item_name: Optional[str] = Form(None),
+    qty: Optional[int] = Form(None),
+    rate: Optional[float] = Form(None),
     payment_type: str = Form(...),
     amount_paid: Optional[float] = Form(None),
     transaction_number: Optional[str] = Form(None),
@@ -73,7 +167,10 @@ async def create_bill(
         label = "Cheque number" if payment_type == PAYMENT_CHEQUE else "Transaction number"
         raise HTTPException(status_code=422, detail=f"{label} is required.")
 
-    bill_total = round(qty * rate, 2)
+    line_items = _parse_items(items, item_name, qty, rate)
+    for line in line_items:
+        line["line_total"] = round(line["qty"] * line["rate"], 2)
+    bill_total = round(sum(line["line_total"] for line in line_items), 2)
 
     # Find or create the customer *within this owner's* book. Scoping the
     # lookup by user_id is what keeps two shops that bill the same phone
@@ -130,11 +227,14 @@ async def create_bill(
         amount_paid = bill_total
         unbalance = 0.0
 
+    first = line_items[0]
     bill = Bill(
         customer_id=customer.id,
-        item_name=item_name,
-        qty=qty,
-        rate=rate,
+        # Flat columns mirror the first line so pre-existing readers of this
+        # table keep seeing a usable item.
+        item_name=first["item_name"],
+        qty=first["qty"],
+        rate=first["rate"],
         bill_total=bill_total,
         payment_type=payment_type,
         amount_paid=amount_paid,
@@ -143,6 +243,16 @@ async def create_bill(
         screenshot_data=screenshot_data,
         screenshot_mime=screenshot_mime,
     )
+    bill.items = [
+        BillItem(
+            item_name=line["item_name"],
+            qty=line["qty"],
+            rate=line["rate"],
+            line_total=line["line_total"],
+            position=index,
+        )
+        for index, line in enumerate(line_items)
+    ]
     db.add(bill)
 
     # Update customer running totals

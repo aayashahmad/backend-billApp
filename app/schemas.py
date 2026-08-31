@@ -82,9 +82,22 @@ class CustomerOut(BaseModel):
 
 # ── Bill ─────────────────────────────────────────────────────────────
 
+class BillItemOut(BaseModel):
+    id: int
+    item_name: str
+    qty: int
+    rate: float
+    line_total: float
+    position: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class BillOut(BaseModel):
     id: int
     customer_id: int
+    # The first line item, kept flat for clients written before multi-item
+    # bills existed. `items` below is the full list.
     item_name: str
     qty: int
     rate: float
@@ -104,6 +117,7 @@ class BillOut(BaseModel):
         ),
     )
     created_at: datetime
+    items: List[BillItemOut] = []
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
@@ -115,3 +129,27 @@ class CustomerWithBills(CustomerOut):
 class BillCreateResponse(BaseModel):
     bill: BillOut
     customer: CustomerOut
+
+
+# ── Product ──────────────────────────────────────────────────────────
+
+class ProductBase(BaseModel):
+    barcode: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=255)
+    rate: float = Field(gt=0)
+
+
+class ProductCreate(ProductBase):
+    pass
+
+
+class ProductUpdate(BaseModel):
+    """Every field optional — the products screen sends only what changed."""
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    rate: Optional[float] = Field(default=None, gt=0)
+
+
+class ProductOut(ProductBase):
+    id: int
+
+    model_config = ConfigDict(from_attributes=True)

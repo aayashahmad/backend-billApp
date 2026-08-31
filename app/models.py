@@ -43,6 +43,7 @@ class User(Base):
     onboarded_at = Column(DateTime, nullable=True)
 
     customers = relationship("Customer", back_populates="owner")
+    products = relationship("Product", back_populates="owner")
 
     @property
     def onboarded(self) -> bool:
@@ -81,6 +82,10 @@ class Bill(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    # First line item, mirrored from `items` below. A bill can now carry
+    # several items, but these columns stay populated so rows written before
+    # bill_items existed keep their meaning and clients that only read the
+    # flat fields keep working.
     item_name = Column(String(255), nullable=False)
     qty = Column(Integer, nullable=False)
     rate = Column(Numeric(12, 2), nullable=False)
@@ -104,6 +109,12 @@ class Bill(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     customer = relationship("Customer", back_populates="bills")
+    items = relationship(
+        "BillItem",
+        back_populates="bill",
+        order_by="BillItem.position",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def screenshot_path(self) -> Optional[str]:
@@ -116,3 +127,57 @@ class Bill(Base):
         if self.screenshot_data is not None:
             return f"api/bills/{self.id}/screenshot"
         return self.transaction_screenshot_url
+
+
+class BillItem(Base):
+    """
+    One line on a bill.
+
+    Bills used to hold a single item in flat columns. Multi-item bills need a
+    row per line, but the totals, payment and screenshot stay on the parent
+    bill — splitting one sale across several bills would have shown up as
+    several entries in the customer's history and forced the amount paid to be
+    apportioned arbitrarily.
+    """
+    __tablename__ = "bill_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    bill_id = Column(
+        Integer, ForeignKey("bills.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    item_name = Column(String(255), nullable=False)
+    qty = Column(Integer, nullable=False)
+    rate = Column(Numeric(12, 2), nullable=False)
+    line_total = Column(Numeric(12, 2), nullable=False)
+    # Preserves the order the items were entered in; without it the print
+    # templates would re-order lines on every fetch.
+    position = Column(Integer, nullable=False, server_default="0")
+
+    bill = relationship("Bill", back_populates="items")
+
+
+class Product(Base):
+    """
+    A barcoded item in one shop's catalogue.
+
+    A barcode carries no name or price of its own, so the mapping has to be
+    recorded once per shop. Scoped by owner and unique per barcode within that
+    owner: two shops routinely stock the same product at different prices, and
+    scoping the uniqueness by user is what stops one shop's catalogue from
+    leaking into another's.
+    """
+    __tablename__ = "products"
+    __table_args__ = (
+        UniqueConstraint("user_id", "barcode", name="uq_products_user_barcode"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    barcode = Column(String(64), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    rate = Column(Numeric(12, 2), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    owner = relationship("User", back_populates="products")
