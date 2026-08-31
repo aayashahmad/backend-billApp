@@ -5,7 +5,7 @@ from sqlalchemy import text
 
 from app.database import engine
 from app.models import Base
-from app.routers import auth, business, customers, bills, products
+from app.routers import auth, business, customers, bills, products, payments
 
 # Create all tables on startup.
 Base.metadata.create_all(bind=engine)
@@ -31,6 +31,7 @@ app.include_router(business.router)
 app.include_router(customers.router)
 app.include_router(bills.router)
 app.include_router(products.router)
+app.include_router(payments.router)
 
 
 @app.get("/", tags=["health"])

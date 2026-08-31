@@ -74,6 +74,9 @@ class Customer(Base):
     owner = relationship("User", back_populates="customers")
     bills = relationship("Bill", back_populates="customer",
                          order_by="Bill.created_at.desc()")
+    payments = relationship("Payment", back_populates="customer",
+                            order_by="Payment.created_at.desc()",
+                            cascade="all, delete-orphan")
 
 
 class Bill(Base):
@@ -181,3 +184,41 @@ class Product(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     owner = relationship("User", back_populates="products")
+
+
+class Payment(Base):
+    """
+    Money received against a customer's outstanding balance.
+
+    Kept separate from Bill because it settles dues rather than recording a
+    sale: it has no items and must not move the customer's billed total, only
+    what they still owe. Folding it in as a zero-item bill would have
+    corrupted every "total billed" figure in the app.
+    """
+    __tablename__ = "payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(
+        Integer, ForeignKey("customers.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    amount = Column(Numeric(12, 2), nullable=False)
+    payment_type = Column(String(10), nullable=False)
+    transaction_number = Column(String(255), nullable=True)
+    note = Column(String(255), nullable=True)
+
+    # Same reasoning as Bill: hosted filesystems are ephemeral, and the image
+    # is a payment record that must stay behind an ownership check.
+    screenshot_data = Column(LargeBinary, nullable=True)
+    screenshot_mime = Column(String(100), nullable=True)
+
+    created_at = Column(DateTime, server_default=func.now())
+
+    customer = relationship("Customer", back_populates="payments")
+
+    @property
+    def screenshot_path(self) -> Optional[str]:
+        """Authenticated download path, or None when no image was attached."""
+        if self.screenshot_data is not None:
+            return f"api/payments/{self.id}/screenshot"
+        return None

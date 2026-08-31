@@ -122,8 +122,26 @@ class BillOut(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
+class PaymentOut(BaseModel):
+    id: int
+    customer_id: int
+    amount: float
+    payment_type: str
+    transaction_number: Optional[str] = None
+    note: Optional[str] = None
+    # Mirrors BillOut: sourced from Payment.screenshot_path, which points at
+    # the ownership-checked download endpoint.
+    transaction_screenshot_url: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices("screenshot_path"),
+    )
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+
 class CustomerWithBills(CustomerOut):
     bills: List[BillOut] = []
+    payments: List[PaymentOut] = []
 
 
 class BillCreateResponse(BaseModel):
