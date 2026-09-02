@@ -126,8 +126,12 @@ class Bill(Base):
 
         Stored images resolve to an authenticated endpoint; legacy rows keep
         pointing at their old static path.
+
+        Decided from the mime column (set exactly when the bytes are), never
+        the blob itself — the blob is deferred on list queries, and touching
+        it here would silently re-load megabytes per row.
         """
-        if self.screenshot_data is not None:
+        if self.screenshot_mime is not None:
             return f"api/bills/{self.id}/screenshot"
         return self.transaction_screenshot_url
 
@@ -218,7 +222,11 @@ class Payment(Base):
 
     @property
     def screenshot_path(self) -> Optional[str]:
-        """Authenticated download path, or None when no image was attached."""
-        if self.screenshot_data is not None:
+        """
+        Authenticated download path, or None when no image was attached.
+
+        Keyed off the mime column so the deferred blob is never touched.
+        """
+        if self.screenshot_mime is not None:
             return f"api/payments/{self.id}/screenshot"
         return None

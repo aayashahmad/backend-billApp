@@ -194,17 +194,25 @@ async def create_bill(
     screenshot_data = None
     screenshot_mime = None
     if transaction_screenshot and transaction_screenshot.filename:
-        screenshot_data = await transaction_screenshot.read()
-
-        if len(screenshot_data) > MAX_SCREENSHOT_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=(
-                    "Screenshot is too large "
-                    f"({len(screenshot_data) // 1024} KB). "
-                    f"Maximum is {MAX_SCREENSHOT_BYTES // 1024} KB."
-                ),
-            )
+        # Read in chunks with a hard cap: reading the whole body first meant
+        # a large upload sat fully in memory BEFORE the size check ran.
+        chunks = []
+        received = 0
+        while True:
+            chunk = await transaction_screenshot.read(1024 * 1024)
+            if not chunk:
+                break
+            received += len(chunk)
+            if received > MAX_SCREENSHOT_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=(
+                        "Screenshot is too large. "
+                        f"Maximum is {MAX_SCREENSHOT_BYTES // 1024} KB."
+                    ),
+                )
+            chunks.append(chunk)
+        screenshot_data = b"".join(chunks)
 
         screenshot_mime = (
             transaction_screenshot.content_type

@@ -10,7 +10,19 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User
 
-SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    # A publicly known signing key lets anyone mint valid tokens for any
+    # account. Render generates SECRET_KEY (render.yaml), so refusing to
+    # start without one only ever fires on a misconfigured deployment; the
+    # fallback survives strictly for local sqlite development.
+    if (os.getenv("DATABASE_URL") or "").startswith("sqlite"):
+        SECRET_KEY = "dev-only-secret-do-not-deploy-0123456789ab"
+    else:
+        raise RuntimeError(
+            "SECRET_KEY is not set. Refusing to sign tokens with a default "
+            "key — set the SECRET_KEY environment variable."
+        )
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24
 

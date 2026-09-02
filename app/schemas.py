@@ -10,7 +10,9 @@ class SignupRequest(BaseModel):
     username: str
     email: str
     phone: str
-    password: str
+    # The app enforces 6 too; without this floor a raw API call could
+    # register an account with an empty password.
+    password: str = Field(min_length=6)
 
 
 class LoginRequest(BaseModel):

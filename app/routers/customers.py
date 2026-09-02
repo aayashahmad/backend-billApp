@@ -1,12 +1,12 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, defer, selectinload
 from sqlalchemy import or_
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import Customer, User
+from app.models import Bill, Customer, Payment, User
 from app.schemas import CustomerOut, CustomerWithBills
 
 router = APIRouter(prefix="/api/customers", tags=["customers"])
@@ -79,7 +79,19 @@ def get_customer_detail(
     """Full profile with bill history — 404 unless the caller owns it."""
     customer = (
         _owned(db, current_user)
-        .options(joinedload(Customer.bills))
+        .options(
+            # selectinload keeps this at three queries however many bills
+            # there are; lazy loading ran one query per bill for its items.
+            selectinload(Customer.bills)
+            .options(defer(Bill.screenshot_data))
+            .selectinload(Bill.items),
+            # The response only describes payments — deferring the image
+            # column stops every screenshot blob (up to 5MB each) from being
+            # pulled into memory on every profile view.
+            selectinload(Customer.payments).options(
+                defer(Payment.screenshot_data)
+            ),
+        )
         .filter(Customer.id == customer_id)
         .first()
     )
