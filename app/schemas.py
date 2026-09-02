@@ -171,3 +171,19 @@ class ProductOut(ProductBase):
     id: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ProductImportRow(ProductBase):
+    """One row of an import. Same rules as a single create."""
+
+
+class ProductImportRequest(BaseModel):
+    rows: List[ProductImportRow]
+
+
+class ProductImportResult(BaseModel):
+    created: int = 0
+    updated: int = 0
+    # Rows the server refused, each with its 1-based position so the owner can
+    # find it in their spreadsheet rather than guess.
+    errors: List[str] = []

@@ -7,9 +7,19 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import Product, User
-from app.schemas import ProductCreate, ProductOut, ProductUpdate
+from app.schemas import (
+    ProductCreate,
+    ProductImportRequest,
+    ProductImportResult,
+    ProductOut,
+    ProductUpdate,
+)
 
 router = APIRouter(prefix="/api/products", tags=["products"])
+
+# One request holds the whole file, so this bounds both the payload and the
+# work done inside a single transaction.
+MAX_IMPORT_ROWS = 5000
 
 
 def _owned(db: Session, user: User):
@@ -100,6 +110,71 @@ def upsert_product(
     db.commit()
     db.refresh(product)
     return product
+
+
+# Registered before "/{product_id}" so the literal path is not captured by it.
+@router.post("/import", response_model=ProductImportResult)
+def import_products(
+    payload: ProductImportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Bulk upsert a catalogue.
+
+    Stocking a shop one item at a time is impractical, so this takes a whole
+    price list in one request. Rows are upserted on barcode like a single
+    create, and a bad row is reported by position rather than failing the
+    whole import — one typo in a long list should not cost the other rows.
+    """
+    if not payload.rows:
+        raise HTTPException(status_code=422, detail="No rows to import.")
+
+    if len(payload.rows) > MAX_IMPORT_ROWS:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{len(payload.rows)} rows is more than the "
+                f"{MAX_IMPORT_ROWS} allowed in one import."
+            ),
+        )
+
+    existing = {
+        product.barcode: product for product in _owned(db, current_user).all()
+    }
+
+    result = ProductImportResult()
+    # A barcode repeated within one file would otherwise be counted twice.
+    seen: dict[str, Product] = {}
+
+    for index, row in enumerate(payload.rows, start=1):
+        barcode = _normalise_barcode(row.barcode)
+        if not barcode:
+            result.errors.append(f"Row {index}: missing barcode.")
+            continue
+
+        product = seen.get(barcode) or existing.get(barcode)
+
+        if product is None:
+            product = Product(
+                user_id=current_user.id,
+                barcode=barcode,
+                name=row.name.strip(),
+                rate=row.rate,
+            )
+            db.add(product)
+            result.created += 1
+        else:
+            product.name = row.name.strip()
+            product.rate = row.rate
+            # Only count an update once, however often the barcode repeats.
+            if barcode not in seen:
+                result.updated += 1
+
+        seen[barcode] = product
+
+    db.commit()
+    return result
 
 
 @router.put("/{product_id}", response_model=ProductOut)
