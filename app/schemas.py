@@ -77,6 +77,21 @@ class BusinessProfileUpdate(BaseModel):
     bill_footer_note: Optional[str] = None
 
 
+class AccountUpdate(BaseModel):
+    """
+    The owner's own account details.
+
+    `current_password` is required only when the email or phone changes:
+    both are credentials — email receives password-reset codes and phone is a
+    login identifier — so changing them from a stolen session would be an
+    account takeover. Renaming yourself is harmless and stays frictionless.
+    """
+    username: str = Field(min_length=1, max_length=100)
+    email: str = Field(min_length=3, max_length=255)
+    phone: str = Field(min_length=7, max_length=20)
+    current_password: Optional[str] = None
+
+
 class UserProfileOut(BusinessProfileOut):
     """Signed-in shop owner's own profile, including their letterhead."""
     id: int

@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import secrets
 from datetime import datetime, timedelta
 
@@ -17,6 +18,7 @@ from app.mailer import (
 )
 from app.models import PasswordResetCode, User
 from app.schemas import (
+    AccountUpdate,
     SignupRequest,
     LoginRequest,
     AuthResponse,
@@ -96,6 +98,93 @@ def signup(req: SignupRequest, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserProfileOut)
 def get_profile(current_user: User = Depends(get_current_user)):
     """Profile of the signed-in shop owner, resolved from the bearer token."""
+    return current_user
+
+
+EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+PHONE_PATTERN = re.compile(r"^\d{7,20}$")
+
+
+@router.put("/me", response_model=UserProfileOut)
+def update_account(
+    payload: AccountUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Update the signed-in owner's own name, email and phone.
+
+    Email and phone are unique across accounts and double as login
+    identifiers, so a clash has to be reported rather than silently
+    overwriting somebody else's row.
+    """
+    username = (payload.username or "").strip()
+    email = (payload.email or "").strip().lower()
+    phone = (payload.phone or "").strip()
+
+    if not username:
+        raise HTTPException(status_code=422, detail="Name is required.")
+    if not EMAIL_PATTERN.match(email):
+        raise HTTPException(status_code=422, detail="Enter a valid email address.")
+    if not PHONE_PATTERN.match(phone):
+        raise HTTPException(
+            status_code=422, detail="Phone number must be 7 to 20 digits."
+        )
+
+    email_changed = email != (current_user.email or "").lower()
+    phone_changed = phone != (current_user.phone or "")
+
+    # Both are credentials, so prove it is really the owner at the keyboard
+    # and not somebody who picked up an unlocked phone.
+    if email_changed or phone_changed:
+        if not payload.current_password:
+            raise HTTPException(
+                status_code=403,
+                detail="Enter your current password to change your email or phone.",
+            )
+        if not verify_password(payload.current_password, current_user.password_hash):
+            raise HTTPException(status_code=403, detail="That password is incorrect.")
+
+    if email_changed:
+        taken = (
+            db.query(User)
+            .filter(User.email == email, User.id != current_user.id)
+            .first()
+        )
+        if taken:
+            raise HTTPException(
+                status_code=409, detail="That email is already used by another account."
+            )
+
+    if phone_changed:
+        taken = (
+            db.query(User)
+            .filter(User.phone == phone, User.id != current_user.id)
+            .first()
+        )
+        if taken:
+            raise HTTPException(
+                status_code=409,
+                detail="That phone number is already used by another account.",
+            )
+
+    current_user.username = username
+    current_user.email = email
+    current_user.phone = phone
+
+    if email_changed or phone_changed:
+        # Any reset code in flight was sent to the old address, or names the
+        # old number. Retire them so a change cannot be undone by a code the
+        # previous holder still has.
+        db.query(PasswordResetCode).filter(
+            PasswordResetCode.user_id == current_user.id,
+            PasswordResetCode.used_at.is_(None),
+        ).update(
+            {PasswordResetCode.used_at: datetime.utcnow()}, synchronize_session=False
+        )
+
+    db.commit()
+    db.refresh(current_user)
     return current_user
 
 

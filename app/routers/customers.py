@@ -56,16 +56,26 @@ def get_customer_by_phone(
 @router.get("/search", response_model=List[CustomerOut])
 def search_customers(
     q: str = Query(..., min_length=1),
+    # The bill form shows these in a scrollable picker, where 20 is easy to
+    # run past — a shop with a dozen Sharmas would never see the last one.
+    limit: int = Query(20, ge=1, le=50),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Search the owner's customers by name or phone (partial match)."""
-    pattern = f"%{q}%"
+    # Escape the LIKE wildcards, or a customer typing "100%" matches everyone.
+    escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = f"%{escaped}%"
     return (
         _owned(db, current_user)
-        .filter(or_(Customer.name.ilike(pattern), Customer.phone.ilike(pattern)))
+        .filter(
+            or_(
+                Customer.name.ilike(pattern, escape="\\"),
+                Customer.phone.ilike(pattern, escape="\\"),
+            )
+        )
         .order_by(Customer.name.asc())
-        .limit(20)
+        .limit(limit)
         .all()
     )
 
