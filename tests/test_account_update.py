@@ -217,3 +217,53 @@ def test_customer_search_matches_names_and_escapes_wildcards(owner):
         "/api/customers/search", headers=owner, params={"q": "ram", "limit": 1}
     ).json()
     assert len(capped) == 1
+
+
+def test_reset_code_follows_the_account_its_phone_belongs_to(monkeypatch):
+    """
+    Every owner has their own email, and the code must go to the address on
+    the account being recovered — not to the sender identity, and not to some
+    other owner. After an email change it must follow the NEW address.
+    """
+    from app import mailer
+    from app.routers import auth as auth_router
+
+    sent = []
+    monkeypatch.setattr(mailer, "is_configured", lambda: True)
+    monkeypatch.setattr(auth_router, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        auth_router,
+        "send_password_reset_code",
+        lambda to, code, minutes: sent.append((to, code)),
+    )
+    auth_router.RESEND_COOLDOWN_SECONDS = 0
+
+    alice = _signup("Alice", "alice.first@shop.test", "9220000001")
+    _signup("Bob", "bob@shop.test", "9220000002")
+
+    # Each owner's code goes to their own address.
+    client.post("/api/auth/forgot-password", json={"phone": "9220000001"})
+    client.post("/api/auth/forgot-password", json={"phone": "9220000002"})
+    assert sent[0][0] == "alice.first@shop.test"
+    assert sent[1][0] == "bob@shop.test"
+    assert sent[0][1] != sent[1][1], "codes must not be shared between accounts"
+
+    # Alice changes her email; the next code must follow it.
+    changed = client.put(
+        "/api/auth/me",
+        headers=alice,
+        json={
+            "username": "Alice",
+            "email": "alice.second@shop.test",
+            "phone": "9220000001",
+            "current_password": PASSWORD,
+        },
+    )
+    assert changed.status_code == 200, changed.text
+
+    sent.clear()
+    response = client.post("/api/auth/forgot-password", json={"phone": "9220000001"})
+    assert response.status_code == 200
+    assert sent[0][0] == "alice.second@shop.test", sent
+    # Bob is untouched by Alice's change.
+    assert response.json()["email_hint"] == "al•••••@shop.test"
