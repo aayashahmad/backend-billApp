@@ -92,6 +92,18 @@ class AccountUpdate(BaseModel):
     current_password: Optional[str] = None
 
 
+class ChangePasswordRequest(BaseModel):
+    """
+    Changing your password while signed in.
+
+    Separate from the reset flow on purpose: someone who still knows their
+    password should not have to go near email to change it, which also means
+    the routine case keeps working if mail delivery is ever down.
+    """
+    current_password: str
+    new_password: str = Field(min_length=6)
+
+
 class UserProfileOut(BusinessProfileOut):
     """Signed-in shop owner's own profile, including their letterhead."""
     id: int

@@ -19,6 +19,7 @@ from app.mailer import (
 from app.models import PasswordResetCode, User
 from app.schemas import (
     AccountUpdate,
+    ChangePasswordRequest,
     SignupRequest,
     LoginRequest,
     AuthResponse,
@@ -186,6 +187,41 @@ def update_account(
     db.commit()
     db.refresh(current_user)
     return current_user
+
+
+@router.put("/password", status_code=204)
+def change_password(
+    payload: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Change the password of the signed-in owner.
+
+    Deliberately independent of email: an owner who still knows their
+    password never has to wait on a message, so the routine case keeps
+    working even if mail delivery is down. The current password is still
+    required — a session left open on a counter must not be enough to lock
+    the real owner out.
+    """
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(status_code=403, detail="That password is incorrect.")
+
+    if payload.new_password == payload.current_password:
+        raise HTTPException(
+            status_code=422, detail="Choose a password you have not used here before."
+        )
+
+    current_user.password_hash = hash_password(payload.new_password)
+
+    # Any reset code still in flight was issued against the old password;
+    # leaving it live would let whoever holds that email undo this change.
+    db.query(PasswordResetCode).filter(
+        PasswordResetCode.user_id == current_user.id,
+        PasswordResetCode.used_at.is_(None),
+    ).update({PasswordResetCode.used_at: datetime.utcnow()}, synchronize_session=False)
+
+    db.commit()
 
 
 @router.post("/login", response_model=AuthResponse)
