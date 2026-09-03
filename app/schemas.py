@@ -25,6 +25,29 @@ class AuthResponse(BaseModel):
     username: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    """Reset always starts from the phone number — what an owner remembers."""
+    phone: str
+
+
+class ForgotPasswordResponse(BaseModel):
+    """
+    Deliberately says the same thing whether or not the number is registered.
+
+    Naming the account would turn this endpoint into a way to test which
+    phone numbers have an account, so the copy is generic and `email_hint`
+    stays null on the miss.
+    """
+    message: str
+    email_hint: Optional[str] = None
+
+
+class ResetPasswordRequest(BaseModel):
+    phone: str
+    code: str
+    new_password: str = Field(min_length=6)
+
+
 class BusinessProfileOut(BaseModel):
     """Letterhead printed on bills and PDFs."""
     business_name: Optional[str] = None

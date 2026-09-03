@@ -50,6 +50,16 @@ services:
       - key: PYTHON_VERSION
         value: "3.11.9"
 
+      # Password-reset email. Brevo's HTTP API is used rather than SMTP
+      # because Render's free plan blocks outbound traffic on every SMTP
+      # port (25/465/587) — an SMTP mailer works locally and then fails
+      # here. Set both in the Render dashboard; MAIL_FROM must be an
+      # address verified as a sender in the Brevo account.
+      - key: BREVO_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+
       # NOTE: the free plan has an ephemeral filesystem — uploaded payment
       # screenshots are deleted on every deploy and restart. See README for
       # the persistent-disk and object-storage options.

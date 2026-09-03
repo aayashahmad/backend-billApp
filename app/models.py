@@ -51,6 +51,31 @@ class User(Base):
         return self.onboarded_at is not None
 
 
+class PasswordResetCode(Base):
+    """
+    A short-lived code emailed to an owner who has forgotten their password.
+
+    The code itself is never stored — only a hash — so a leaked database does
+    not hand out working reset codes. Rows are kept after use rather than
+    deleted, because `used_at` is what stops a code being replayed.
+    """
+    __tablename__ = "password_reset_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    code_hash = Column(String(255), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    # Wrong guesses, so a code can be locked out before it expires.
+    attempts = Column(Integer, nullable=False, default=0)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User")
+
+
 class Customer(Base):
     """
     Billing customers, owned by one shop owner.
