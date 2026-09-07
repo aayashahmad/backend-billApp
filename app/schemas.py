@@ -56,6 +56,14 @@ class BusinessProfileOut(BaseModel):
     business_phone: Optional[str] = None
     business_alt_phone: Optional[str] = None
     registration_number: Optional[str] = None
+    # Printed on the bill so a customer can pay or get in touch without
+    # asking: tax identity, the two ways to send money, and a chat number.
+    gstin: Optional[str] = None
+    upi_id: Optional[str] = None
+    bank_account_name: Optional[str] = None
+    bank_account_number: Optional[str] = None
+    bank_ifsc: Optional[str] = None
+    whatsapp_number: Optional[str] = None
     bill_footer_note: Optional[str] = None
     onboarded: bool = False
 
@@ -74,6 +82,12 @@ class BusinessProfileUpdate(BaseModel):
     business_phone: Optional[str] = None
     business_alt_phone: Optional[str] = None
     registration_number: Optional[str] = None
+    gstin: Optional[str] = None
+    upi_id: Optional[str] = None
+    bank_account_name: Optional[str] = None
+    bank_account_number: Optional[str] = None
+    bank_ifsc: Optional[str] = None
+    whatsapp_number: Optional[str] = None
     bill_footer_note: Optional[str] = None
 
 

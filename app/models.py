@@ -36,6 +36,19 @@ class User(Base):
     business_phone = Column(String(40), nullable=True)
     business_alt_phone = Column(String(40), nullable=True)
     registration_number = Column(String(100), nullable=True)
+
+    # Printed on every bill. GSTIN is kept separate from registration_number:
+    # a shop can hold a trade licence without being GST-registered, and only
+    # the GSTIN may be presented as one on a tax invoice.
+    gstin = Column(String(20), nullable=True)
+    # Collection details customers pay into.
+    upi_id = Column(String(120), nullable=True)
+    bank_account_name = Column(String(150), nullable=True)
+    bank_account_number = Column(String(40), nullable=True)
+    bank_ifsc = Column(String(15), nullable=True)
+    # Where customers should message about a bill — often not the same line
+    # the shop answers calls on.
+    whatsapp_number = Column(String(20), nullable=True)
     bill_footer_note = Column(Text, nullable=True)
 
     # Set the first time the owner saves their bill details. NULL means they
