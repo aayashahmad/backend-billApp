@@ -78,22 +78,13 @@ async def record_payment(
         )
 
     outstanding = float(customer.total_unpaid or 0)
-    if outstanding <= 0:
-        raise HTTPException(
-            status_code=422,
-            detail=f"{customer.name} has nothing outstanding to pay.",
-        )
 
-    # Taking more than is owed would push the balance negative, which every
-    # screen reading it would then render as nonsense.
-    if round(amount, 2) > round(outstanding, 2):
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f"Payment ({amount:.2f}) is more than the "
-                f"{outstanding:.2f} outstanding."
-            ),
-        )
+    # More than is owed is no longer refused: customers routinely hand over a
+    # round figure, or pay ahead before a festival. What clears the debt does
+    # so, and the rest is held as an advance against their next bill rather
+    # than pushed into a negative balance every screen would misread.
+    settles = min(round(amount, 2), round(outstanding, 2))
+    advance_added = round(round(amount, 2) - settles, 2)
 
     screenshot_data = None
     screenshot_mime = None
@@ -141,7 +132,10 @@ async def record_payment(
     )
     db.add(payment)
 
-    customer.total_unpaid = max(round(outstanding - amount, 2), 0.0)
+    customer.total_unpaid = max(round(outstanding - settles, 2), 0.0)
+    customer.advance_balance = round(
+        float(customer.advance_balance or 0) + advance_added, 2
+    )
 
     db.commit()
     db.refresh(payment)

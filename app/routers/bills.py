@@ -231,31 +231,29 @@ async def create_bill(
     # over one amount covering both — so the excess is applied to that balance
     # rather than stored as a negative balance on this bill.
     outstanding_before = float(customer.total_unpaid or 0)
+    advance_before = float(customer.advance_balance or 0)
 
     if payment_type in ENTERED_AMOUNT_TYPES:
         paid = float(amount_paid or 0.0)
 
-        # Beyond the bill *and* every outstanding due is a typo, not a
-        # payment. Rejecting is more truthful than silently crediting a
-        # balance the shop does not actually owe.
-        payable = round(bill_total + outstanding_before, 2)
-        if paid > payable:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"Amount paid ({paid:.2f}) is more than this bill plus "
-                    f"everything outstanding ({payable:.2f})."
-                ),
-            )
+        # Anything the customer already paid ahead settles this bill before
+        # they are asked for more — that is the whole point of an advance.
+        advance_used = min(advance_before, bill_total)
+        covered = round(paid + advance_used, 2)
 
-        unbalance = max(round(bill_total - paid, 2), 0.0)
-        # Whatever the payment covered beyond this bill clears earlier dues.
-        excess = max(round(paid - bill_total, 2), 0.0)
+        unbalance = max(round(bill_total - covered, 2), 0.0)
+        # Whatever the payment covered beyond this bill clears earlier dues,
+        # and anything past those is money paid ahead.
+        surplus = max(round(covered - bill_total, 2), 0.0)
+        excess = min(surplus, outstanding_before)
+        new_advance = round(surplus - excess, 2)
     else:
         # An online transfer settles the bill in full by definition.
         amount_paid = bill_total
         unbalance = 0.0
         excess = 0.0
+        advance_used = 0.0
+        new_advance = 0.0
 
     first = line_items[0]
     bill = Bill(
@@ -291,6 +289,9 @@ async def create_bill(
     customer.total_amount = round(float(customer.total_amount or 0) + bill_total, 2)
     customer.total_unpaid = max(
         round(outstanding_before + unbalance - excess, 2), 0.0
+    )
+    customer.advance_balance = max(
+        round(advance_before - advance_used + new_advance, 2), 0.0
     )
 
     db.commit()

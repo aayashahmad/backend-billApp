@@ -109,6 +109,13 @@ class Customer(Base):
     # which is deliberately different from 0 — zero is a real setting meaning
     # "cash only, no credit", and the two must not collapse into each other.
     credit_limit = Column(Numeric(12, 2), nullable=True)
+    # Money paid ahead, held against future bills. Kept as its own positive
+    # figure rather than a negative total_unpaid: every screen and document
+    # reads "unpaid" as a debt, and a negative one would quietly turn into a
+    # nonsense balance owed by the shop.
+    advance_balance = Column(
+        Numeric(12, 2), nullable=False, server_default="0", default=0
+    )
     total_amount = Column(Numeric(12, 2), nullable=False, server_default="0")
     total_unpaid = Column(Numeric(12, 2), nullable=False, server_default="0")
     created_at = Column(DateTime, server_default=func.now())

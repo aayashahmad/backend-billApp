@@ -155,6 +155,8 @@ class CustomerOut(BaseModel):
     credit_limit: Optional[float] = None
     total_amount: float
     total_unpaid: float
+    # Paid ahead and not yet used. Applied automatically to the next bill.
+    advance_balance: float = 0
 
     class Config:
         from_attributes = True
