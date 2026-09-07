@@ -267,3 +267,32 @@ class ProductImportResult(BaseModel):
     # Rows the server refused, each with its 1-based position so the owner can
     # find it in their spreadsheet rather than guess.
     errors: List[str] = []
+
+
+# ── Reports ──────────────────────────────────────────────────────────
+
+class ReportBucket(BaseModel):
+    """One column of the chart: a day, week, month or year."""
+    label: str
+    starts_at: datetime
+    bills: int
+    # What was sold in this bucket.
+    billed: float
+    # Money that arrived in it — counter payments plus later settlements of
+    # old dues, which is why it can exceed `billed`.
+    collected: float
+    # What this bucket added to the book, never negative.
+    outstanding: float
+
+
+class ReportTotals(BaseModel):
+    bills: int
+    billed: float
+    collected: float
+    outstanding: float
+
+
+class ReportSummary(BaseModel):
+    period: str
+    buckets: List[ReportBucket] = []
+    totals: ReportTotals
