@@ -135,10 +135,24 @@ class UserProfileOut(BusinessProfileOut):
 
 # ── Customer ─────────────────────────────────────────────────────────
 
+class CustomerUpdate(BaseModel):
+    """
+    Editable settings on a customer.
+
+    `credit_limit` is optional and nullable, and the two mean different
+    things: omitted leaves the limit alone, explicit null removes it.
+    """
+    credit_limit: Optional[float] = Field(default=None, ge=0)
+    # Distinguishes "clear the limit" from "leave it as it is", which a bare
+    # null cannot express on its own.
+    clear_credit_limit: bool = False
+
+
 class CustomerOut(BaseModel):
     id: int
     name: str
     phone: str
+    credit_limit: Optional[float] = None
     total_amount: float
     total_unpaid: float
 

@@ -105,6 +105,10 @@ class Customer(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     phone = Column(String(20), nullable=False, index=True)
+    # How much this customer is allowed to owe at once. NULL means no limit,
+    # which is deliberately different from 0 — zero is a real setting meaning
+    # "cash only, no credit", and the two must not collapse into each other.
+    credit_limit = Column(Numeric(12, 2), nullable=True)
     total_amount = Column(Numeric(12, 2), nullable=False, server_default="0")
     total_unpaid = Column(Numeric(12, 2), nullable=False, server_default="0")
     created_at = Column(DateTime, server_default=func.now())

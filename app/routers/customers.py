@@ -7,7 +7,7 @@ from sqlalchemy import or_
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import Bill, Customer, Payment, User
-from app.schemas import CustomerOut, CustomerWithBills
+from app.schemas import CustomerOut, CustomerWithBills, CustomerUpdate
 
 router = APIRouter(prefix="/api/customers", tags=["customers"])
 
@@ -107,4 +107,36 @@ def get_customer_detail(
     )
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+    return customer
+
+
+@router.put("/{customer_id}", response_model=CustomerOut)
+def update_customer(
+    customer_id: int,
+    payload: CustomerUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Set or clear how much this customer may owe at once.
+
+    A limit is a shop's own policy rather than an accounting fact, so nothing
+    here touches the running totals — it only records the ceiling the billing
+    screen warns against.
+    """
+    customer = (
+        _owned(db, current_user).filter(Customer.id == customer_id).first()
+    )
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    if payload.clear_credit_limit:
+        # Explicitly removing the limit, which a null value alone could not
+        # tell apart from "not supplied".
+        customer.credit_limit = None
+    elif payload.credit_limit is not None:
+        customer.credit_limit = payload.credit_limit
+
+    db.commit()
+    db.refresh(customer)
     return customer
