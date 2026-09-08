@@ -185,8 +185,15 @@ class BillOut(BaseModel):
     rate: float
     bill_total: float
     payment_type: str
+    # Money actually received at the counter for this bill.
     amount_paid: Optional[float] = None
+    # What is still owed on this bill.
     unbalance: Optional[float] = None
+    # The settlement, recorded so every document reads the same figures
+    # rather than recomputing them and drifting apart.
+    advance_applied: float = 0
+    advance_added: float = 0
+    advance_balance_after: float = 0
     transaction_number: Optional[str] = None
     # Sourced from Bill.screenshot_path, which points at the authenticated
     # download endpoint for stored images and falls back to the legacy static

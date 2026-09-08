@@ -145,6 +145,20 @@ class Bill(Base):
     payment_type = Column(String(10), nullable=False)
     amount_paid = Column(Numeric(12, 2), nullable=True)
     unbalance = Column(Numeric(12, 2), nullable=True)
+    # What this bill did with the customer's credit, recorded on the bill
+    # rather than derived from the customer later: a receipt reprinted next
+    # month must show what happened when it was written, not today's balance.
+    advance_applied = Column(
+        Numeric(12, 2), nullable=False, server_default="0", default=0
+    )
+    # Money received beyond this bill and every old due, which became credit.
+    advance_added = Column(
+        Numeric(12, 2), nullable=False, server_default="0", default=0
+    )
+    # The customer's credit once this bill was settled.
+    advance_balance_after = Column(
+        Numeric(12, 2), nullable=False, server_default="0", default=0
+    )
     transaction_number = Column(String(255), nullable=True)
     # Legacy: path of a screenshot written to the local uploads directory.
     # Kept so pre-existing rows still resolve; new uploads go to the columns

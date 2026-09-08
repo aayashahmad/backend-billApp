@@ -34,7 +34,12 @@ MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024
 PAYMENT_CASH = "cash"
 PAYMENT_ONLINE = "online"
 PAYMENT_CHEQUE = "cheque"
-PAYMENT_TYPES = (PAYMENT_CASH, PAYMENT_ONLINE, PAYMENT_CHEQUE)
+# "credit" means nothing changed hands: the whole bill goes on the customer's
+# account. Recording that as a cash payment of zero would be a lie in the
+# ledger and in every report that groups by payment type.
+PAYMENT_CREDIT = "credit"
+
+PAYMENT_TYPES = (PAYMENT_CASH, PAYMENT_ONLINE, PAYMENT_CHEQUE, PAYMENT_CREDIT)
 ENTERED_AMOUNT_TYPES = (PAYMENT_CASH, PAYMENT_CHEQUE)
 # Both carry a reference number: a UTR for online, a cheque number for cheque.
 REFERENCE_TYPES = (PAYMENT_ONLINE, PAYMENT_CHEQUE)
@@ -233,11 +238,29 @@ async def create_bill(
     outstanding_before = float(customer.total_unpaid or 0)
     advance_before = float(customer.advance_balance or 0)
 
-    if payment_type in ENTERED_AMOUNT_TYPES:
+    # ── Settlement ────────────────────────────────────────────────────
+    #
+    # One place decides where every rupee goes, and the result is stored on
+    # the bill. The app, the PDF, the thermal receipt and the reports all
+    # read those stored figures rather than each recomputing the sum, which
+    # is how a screen and a printed receipt start disagreeing about money.
+    #
+    # Order matters: the customer's own credit settles the bill first, then
+    # money handed over now, and only what is left over touches old dues or
+    # becomes new credit.
+    if payment_type == PAYMENT_CREDIT:
+        # Nothing changed hands. The bill goes on the account, though any
+        # credit the customer holds still settles what it can — refusing to
+        # use it would leave them owing money they had already paid.
+        paid = 0.0
+        amount_paid = 0.0
+        advance_used = min(advance_before, bill_total)
+        unbalance = max(round(bill_total - advance_used, 2), 0.0)
+        excess = 0.0
+        new_advance = 0.0
+    elif payment_type in ENTERED_AMOUNT_TYPES:
         paid = float(amount_paid or 0.0)
 
-        # Anything the customer already paid ahead settles this bill before
-        # they are asked for more — that is the whole point of an advance.
         advance_used = min(advance_before, bill_total)
         covered = round(paid + advance_used, 2)
 
@@ -249,6 +272,7 @@ async def create_bill(
         new_advance = round(surplus - excess, 2)
     else:
         # An online transfer settles the bill in full by definition.
+        paid = bill_total
         amount_paid = bill_total
         unbalance = 0.0
         excess = 0.0
@@ -267,6 +291,11 @@ async def create_bill(
         payment_type=payment_type,
         amount_paid=amount_paid,
         unbalance=unbalance,
+        advance_applied=advance_used,
+        advance_added=new_advance,
+        advance_balance_after=max(
+            round(advance_before - advance_used + new_advance, 2), 0.0
+        ),
         transaction_number=transaction_number,
         screenshot_data=screenshot_data,
         screenshot_mime=screenshot_mime,
