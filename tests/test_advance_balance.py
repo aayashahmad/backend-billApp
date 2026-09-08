@@ -141,3 +141,39 @@ def test_advance_and_debt_are_never_held_at_once(auth):
             f"{customer['name']} owes {customer['total_unpaid']} "
             f"while holding {customer['advance_balance']}"
         )
+
+
+def test_a_payment_records_what_the_money_did(auth):
+    """
+    A receipt printed later must show what happened when the money changed
+    hands, so the split is stored on the payment rather than derived from
+    balances that will have moved on.
+    """
+    created = _bill(auth, "9771110009", 1000, 0, name="Receipt Customer")
+    customer_id = created["customer"]["id"]
+
+    _pay(auth, customer_id, 1500)
+
+    detail = client.get(f"/api/customers/{customer_id}", headers=auth).json()
+    payment = detail["payments"][0]
+
+    assert payment["amount"] == 1500
+    assert payment["applied_to_dues"] == 1000
+    assert payment["advance_added"] == 500
+    assert payment["outstanding_after"] == 0
+    assert payment["advance_balance_after"] == 500
+    # Every rupee is accounted for.
+    assert payment["applied_to_dues"] + payment["advance_added"] == payment["amount"]
+
+
+def test_a_pure_advance_records_no_settlement(auth):
+    created = _bill(auth, "9771110010", 200, 200, name="Prepay Only")
+    customer_id = created["customer"]["id"]
+
+    _pay(auth, customer_id, 700)
+
+    detail = client.get(f"/api/customers/{customer_id}", headers=auth).json()
+    payment = detail["payments"][0]
+    assert payment["applied_to_dues"] == 0
+    assert payment["advance_added"] == 700
+    assert payment["advance_balance_after"] == 700

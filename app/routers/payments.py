@@ -137,6 +137,12 @@ async def record_payment(
         float(customer.advance_balance or 0) + advance_added, 2
     )
 
+    # Record what this money did, so its receipt stays truthful on a reprint.
+    payment.applied_to_dues = settles
+    payment.advance_added = advance_added
+    payment.outstanding_after = customer.total_unpaid
+    payment.advance_balance_after = customer.advance_balance
+
     db.commit()
     db.refresh(payment)
     return payment

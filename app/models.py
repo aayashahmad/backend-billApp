@@ -274,6 +274,22 @@ class Payment(Base):
     transaction_number = Column(String(255), nullable=True)
     note = Column(String(255), nullable=True)
 
+    # What this money did, recorded here so a receipt reprinted later shows
+    # what happened at the time rather than today's balances — the same
+    # reason bills carry their own settlement.
+    applied_to_dues = Column(
+        Numeric(12, 2), nullable=False, server_default="0", default=0
+    )
+    advance_added = Column(
+        Numeric(12, 2), nullable=False, server_default="0", default=0
+    )
+    outstanding_after = Column(
+        Numeric(12, 2), nullable=False, server_default="0", default=0
+    )
+    advance_balance_after = Column(
+        Numeric(12, 2), nullable=False, server_default="0", default=0
+    )
+
     # Same reasoning as Bill: hosted filesystems are ephemeral, and the image
     # is a payment record that must stay behind an ownership check.
     screenshot_data = Column(LargeBinary, nullable=True)

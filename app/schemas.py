@@ -216,6 +216,12 @@ class PaymentOut(BaseModel):
     customer_id: int
     amount: float
     payment_type: str
+    # What the money did: how much cleared a debt, how much became credit,
+    # and where the account stood afterwards.
+    applied_to_dues: float = 0
+    advance_added: float = 0
+    outstanding_after: float = 0
+    advance_balance_after: float = 0
     transaction_number: Optional[str] = None
     note: Optional[str] = None
     # Mirrors BillOut: sourced from Payment.screenshot_path, which points at
