@@ -89,6 +89,29 @@ class PasswordResetCode(Base):
     user = relationship("User")
 
 
+class EmailVerification(Base):
+    """
+    A code proving somebody controls an email address, before any account
+    exists for it.
+
+    Keyed by address rather than user because it is used during signup, when
+    there is no user yet. Only a hash of the code is stored, for the same
+    reason password reset codes are hashed: a leaked table must not hand out
+    working codes.
+    """
+    __tablename__ = "email_verifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), nullable=False, index=True)
+    code_hash = Column(String(255), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    attempts = Column(Integer, nullable=False, default=0)
+    # Set once the right code is entered; signup then trusts this address for
+    # a short window rather than asking again on the next screen.
+    verified_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+
 class Customer(Base):
     """
     Billing customers, owned by one shop owner.

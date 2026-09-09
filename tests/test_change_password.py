@@ -18,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from tests.conftest import mark_email_verified
 
 client = TestClient(app)
 
@@ -28,6 +29,7 @@ NEW = "changedpass2"
 
 @pytest.fixture(scope="module")
 def auth():
+    mark_email_verified("changer@shop.test")
     response = client.post(
         "/api/auth/signup",
         json={

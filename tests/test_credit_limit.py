@@ -18,12 +18,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from tests.conftest import mark_email_verified
 
 client = TestClient(app)
 
 
 @pytest.fixture(scope="module")
 def auth():
+    mark_email_verified("limits@shop.test")
     response = client.post(
         "/api/auth/signup",
         json={
@@ -111,6 +113,7 @@ def test_the_limit_travels_with_lists_and_search(auth, customer):
 
 
 def test_another_shop_cannot_set_your_customers_limit(auth, customer):
+    mark_email_verified("other-limits@shop.test")
     other = client.post(
         "/api/auth/signup",
         json={

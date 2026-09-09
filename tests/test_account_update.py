@@ -18,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from tests.conftest import mark_email_verified
 
 client = TestClient(app)
 
@@ -25,6 +26,7 @@ PASSWORD = "ownerpass1"
 
 
 def _signup(username, email, phone):
+    mark_email_verified(email)
     response = client.post(
         "/api/auth/signup",
         json={

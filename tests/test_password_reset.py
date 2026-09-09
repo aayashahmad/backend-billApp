@@ -30,6 +30,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from tests.conftest import mark_email_verified
 from app.routers import auth as auth_router
 
 client = TestClient(app)
@@ -41,6 +42,7 @@ PASSWORD = "original123"
 
 @pytest.fixture(scope="module", autouse=True)
 def account():
+    mark_email_verified(EMAIL)
     response = client.post(
         "/api/auth/signup",
         json={

@@ -190,3 +190,25 @@ def send_password_reset_code(to: str, code: str, minutes_valid: int) -> None:
 </body></html>"""
 
     send_email(to, subject, text_body, html_body)
+
+
+def send_email_verification_code(to: str, code: str, minutes_valid: int) -> None:
+    """Proves somebody controls an address before an account is made for it."""
+    subject = "Verify your email for Billing"
+    text_body = (
+        f"Your Billing verification code is {code}.\n\n"
+        f"It expires in {minutes_valid} minutes.\n\n"
+        "If you did not start creating an account, you can ignore this email."
+    )
+    html_body = f"""\
+<html><body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;
+ color:#0F172A;line-height:1.5">
+  <p>Your Billing verification code is:</p>
+  <p style="font-size:30px;font-weight:700;letter-spacing:5px;color:#2563EB;
+     margin:20px 0">{code}</p>
+  <p>It expires in {minutes_valid} minutes.</p>
+  <p style="color:#64748B;font-size:13px">If you did not start creating an
+     account, you can ignore this email.</p>
+</body></html>"""
+
+    send_email(to, subject, text_body, html_body)

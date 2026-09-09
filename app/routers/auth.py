@@ -10,15 +10,19 @@ from sqlalchemy import or_
 
 from app.database import get_db
 from app.mailer import (
+    send_email_verification_code,
     MailNotConfigured,
     MailSendFailed,
     is_configured,
     send_password_reset_code,
     transport_name,
 )
-from app.models import PasswordResetCode, User
+from app.models import EmailVerification, PasswordResetCode, User
 from app.schemas import (
     AccountUpdate,
+    EmailVerificationConfirm,
+    EmailVerificationRequest,
+    EmailVerificationResponse,
     ChangePasswordRequest,
     SignupRequest,
     LoginRequest,
@@ -73,22 +77,185 @@ def _dev_otp_logging_allowed() -> bool:
     return (os.getenv("DATABASE_URL") or "").startswith("sqlite")
 
 
+VERIFICATION_TTL_MINUTES = 15
+VERIFICATION_MAX_ATTEMPTS = 5
+VERIFICATION_COOLDOWN_SECONDS = 60
+# How long a verified address stays trusted, so somebody who verifies and
+# then fills in the rest of the form is not asked again.
+VERIFICATION_TRUST_MINUTES = 60
+
+
+def _normalise_email(value: str) -> str:
+    return (value or "").strip().lower()
+
+
+@router.post("/verify-email/request", response_model=EmailVerificationResponse)
+def request_email_verification(
+    payload: EmailVerificationRequest, db: Session = Depends(get_db)
+):
+    """
+    Emails a code proving the person signing up controls this address.
+
+    Deliberately refuses an address that already has an account: letting it
+    through would turn this into a way to discover who is registered, and the
+    signup that followed would fail anyway.
+    """
+    email = _normalise_email(payload.email)
+    if not EMAIL_PATTERN.match(email):
+        raise HTTPException(status_code=422, detail="Enter a valid email address.")
+
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(
+            status_code=409,
+            detail="That email already has an account. Sign in instead.",
+        )
+
+    now = datetime.utcnow()
+
+    latest = (
+        db.query(EmailVerification)
+        .filter(EmailVerification.email == email)
+        .order_by(EmailVerification.created_at.desc())
+        .first()
+    )
+    if latest and latest.created_at:
+        age = (now - latest.created_at).total_seconds()
+        if age < VERIFICATION_COOLDOWN_SECONDS:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "A code was just sent. Please wait "
+                    f"{int(VERIFICATION_COOLDOWN_SECONDS - age)} seconds."
+                ),
+            )
+
+    # Any earlier code for this address stops working.
+    db.query(EmailVerification).filter(
+        EmailVerification.email == email,
+        EmailVerification.verified_at.is_(None),
+    ).delete(synchronize_session=False)
+
+    code = f"{secrets.randbelow(10 ** CODE_DIGITS):0{CODE_DIGITS}d}"
+    db.add(
+        EmailVerification(
+            email=email,
+            code_hash=hash_password(code),
+            expires_at=now + timedelta(minutes=VERIFICATION_TTL_MINUTES),
+            attempts=0,
+        )
+    )
+    db.commit()
+
+    if is_configured():
+        try:
+            send_email_verification_code(email, code, VERIFICATION_TTL_MINUTES)
+        except Exception as exc:  # noqa: BLE001 — providers raise many types
+            logger.exception("Verification email failed for %s", email)
+            raise HTTPException(
+                status_code=502,
+                detail="Could not send the code just now. Please try again.",
+            ) from exc
+    elif _dev_otp_logging_allowed():
+        logger.warning("[dev] email verification code for %s: %s", email, code)
+    else:
+        raise HTTPException(
+            status_code=503,
+            detail="Email verification is not configured on this server.",
+        )
+
+    return EmailVerificationResponse(
+        message=f"We sent a {CODE_DIGITS}-digit code to {email}.",
+        expires_in_minutes=VERIFICATION_TTL_MINUTES,
+    )
+
+
+@router.post("/verify-email/confirm", response_model=EmailVerificationResponse)
+def confirm_email_verification(
+    payload: EmailVerificationConfirm, db: Session = Depends(get_db)
+):
+    """Checks the code and marks the address usable for a signup."""
+    email = _normalise_email(payload.email)
+    code = (payload.code or "").strip()
+    now = datetime.utcnow()
+
+    record = (
+        db.query(EmailVerification)
+        .filter(
+            EmailVerification.email == email,
+            EmailVerification.verified_at.is_(None),
+        )
+        .order_by(EmailVerification.created_at.desc())
+        .first()
+    )
+
+    invalid = HTTPException(
+        status_code=400, detail="That code is invalid or has expired."
+    )
+    if not record or record.expires_at < now:
+        raise invalid
+
+    if record.attempts >= VERIFICATION_MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many incorrect attempts. Ask for a new code.",
+        )
+
+    if not verify_password(code, record.code_hash):
+        record.attempts += 1
+        db.commit()
+        raise invalid
+
+    record.verified_at = now
+    db.commit()
+
+    return EmailVerificationResponse(
+        message="Email verified.", expires_in_minutes=VERIFICATION_TRUST_MINUTES
+    )
+
+
 @router.post("/signup", response_model=AuthResponse, status_code=201)
 def signup(req: SignupRequest, db: Session = Depends(get_db)):
+    email = _normalise_email(req.email)
+
     existing = db.query(User).filter(
-        or_(User.email == req.email, User.phone == req.phone)
+        or_(User.email == email, User.phone == req.phone)
     ).first()
     if existing:
         raise HTTPException(status_code=400,
                             detail="Email or phone already registered")
 
+    # The address must have been proved recently. Checked here rather than
+    # trusted from the client: an account is the thing password resets are
+    # sent to, so an unverified address would lock the owner out of their own
+    # shop the first time they forgot their password.
+    verified = (
+        db.query(EmailVerification)
+        .filter(
+            EmailVerification.email == email,
+            EmailVerification.verified_at.isnot(None),
+            EmailVerification.verified_at
+            >= datetime.utcnow() - timedelta(minutes=VERIFICATION_TRUST_MINUTES),
+        )
+        .first()
+    )
+    if not verified:
+        raise HTTPException(
+            status_code=403,
+            detail="Verify your email address before creating the account.",
+        )
+
     user = User(
         username=req.username,
-        email=req.email,
+        email=email,
         phone=req.phone,
         password_hash=hash_password(req.password),
     )
     db.add(user)
+    # The proof has done its job; leaving it would let a deleted account be
+    # recreated later without proving the address again.
+    db.query(EmailVerification).filter(
+        EmailVerification.email == email
+    ).delete(synchronize_session=False)
     db.commit()
     db.refresh(user)
 

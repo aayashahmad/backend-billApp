@@ -20,6 +20,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from tests.conftest import mark_email_verified
 
 client = TestClient(app)
 
@@ -28,6 +29,7 @@ IST = 330  # minutes east of UTC
 
 @pytest.fixture(scope="module")
 def auth():
+    mark_email_verified("reports@shop.test")
     response = client.post(
         "/api/auth/signup",
         json={
@@ -173,6 +175,7 @@ def test_buckets_follow_the_shops_clock_not_utc(auth):
 
 
 def test_one_shop_cannot_see_anothers_takings(auth):
+    mark_email_verified("rival@shop.test")
     other = client.post(
         "/api/auth/signup",
         json={

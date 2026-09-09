@@ -23,6 +23,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from tests.conftest import mark_email_verified
 
 client = TestClient(app)
 
@@ -31,6 +32,7 @@ _phone_counter = iter(range(1000, 9999))
 
 @pytest.fixture(scope="module")
 def auth():
+    mark_email_verified("ledger@shop.test")
     response = client.post(
         "/api/auth/signup",
         json={

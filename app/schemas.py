@@ -48,6 +48,22 @@ class ResetPasswordRequest(BaseModel):
     new_password: str = Field(min_length=6)
 
 
+class EmailVerificationRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+
+
+class EmailVerificationConfirm(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+    code: str
+
+
+class EmailVerificationResponse(BaseModel):
+    message: str
+    # Minutes the code stays valid, so the screen can say so without
+    # hardcoding a number that might drift from the server's.
+    expires_in_minutes: int = 15
+
+
 class BusinessProfileOut(BaseModel):
     """Letterhead printed on bills and PDFs."""
     business_name: Optional[str] = None

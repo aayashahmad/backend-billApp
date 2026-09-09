@@ -18,11 +18,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from tests.conftest import mark_email_verified
 
 client = TestClient(app)
 
 
 def _signup_and_token():
+    mark_email_verified("qa@settlement.test")
     response = client.post(
         "/api/auth/signup",
         json={
