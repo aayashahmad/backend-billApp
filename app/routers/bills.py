@@ -261,7 +261,13 @@ async def create_bill(
     elif payment_type in ENTERED_AMOUNT_TYPES:
         paid = float(amount_paid or 0.0)
 
-        advance_used = min(advance_before, bill_total)
+        # Credit only covers what the payment does not. Applying the whole
+        # advance first and recycling the surplus nets out to the same
+        # balance, but it records a bill paid in cash as having been settled
+        # from credit — and the receipt, statement and CSV all repeat that
+        # fiction to the customer.
+        shortfall = max(round(bill_total - paid, 2), 0.0)
+        advance_used = min(advance_before, shortfall)
         covered = round(paid + advance_used, 2)
 
         unbalance = max(round(bill_total - covered, 2), 0.0)

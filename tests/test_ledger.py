@@ -198,6 +198,40 @@ def test_case_h_advance_settles_the_whole_bill(auth):
     assert body["customer"]["total_unpaid"] == 0
 
 
+# ── Case I — cash covers the bill while credit is held ───────────────
+
+def test_credit_is_left_alone_when_the_payment_covers_the_bill(auth):
+    """
+    A customer holding credit who pays cash has not spent that credit.
+
+    The balances net out either way, but the bill stores what happened, and
+    a receipt saying a cash sale was "settled from your advance" is a claim
+    the customer will dispute — they watched themselves hand over the money.
+    """
+    phone = _new_phone()
+    created = _bill(auth, phone, 100, paid=100)
+    customer_id = created["customer"]["id"]
+    _advance(auth, customer_id, 580)
+
+    body = _bill(auth, phone, 100, paid=100)
+    _assert_bill(body["bill"], total=100, paid=100, applied=0, outstanding=0, added=0)
+    # The credit is untouched, not spent and refunded.
+    assert body["customer"]["advance_balance"] == 580
+    assert body["bill"]["advance_balance_after"] == 580
+
+
+def test_credit_covers_only_the_shortfall(auth):
+    """Part payment draws exactly the gap, never the whole balance."""
+    phone = _new_phone()
+    created = _bill(auth, phone, 100, paid=100)
+    customer_id = created["customer"]["id"]
+    _advance(auth, customer_id, 500)
+
+    body = _bill(auth, phone, 300, paid=200)
+    _assert_bill(body["bill"], total=300, paid=200, applied=100, outstanding=0, added=0)
+    assert body["customer"]["advance_balance"] == 400
+
+
 # ── The account stays consistent across a long sequence ──────────────
 
 def test_the_ledger_balances_after_many_transactions(auth):
