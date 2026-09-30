@@ -7,7 +7,16 @@ from sqlalchemy import or_
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import Bill, Customer, Payment, User
-from app.schemas import CustomerOut, CustomerWithBills, CustomerUpdate
+from app.opening_balance import apply_opening_balance
+from app.schemas import (
+    BulkOpeningBalanceIn,
+    BulkOpeningBalanceOut,
+    CustomerOut,
+    CustomerWithBills,
+    CustomerUpdate,
+    OpeningBalanceIn,
+    OpeningBalanceOut,
+)
 
 router = APIRouter(prefix="/api/customers", tags=["customers"])
 
@@ -140,3 +149,110 @@ def update_customer(
     db.commit()
     db.refresh(customer)
     return customer
+
+
+def _opening_balance_out(customer: Customer) -> OpeningBalanceOut:
+    return OpeningBalanceOut(
+        customer_id=customer.id,
+        amount=(
+            float(customer.opening_balance)
+            if customer.opening_balance is not None
+            else None
+        ),
+        balance_type=customer.opening_balance_type,
+        as_of=customer.opening_balance_date,
+        reference=customer.opening_balance_ref,
+        note=customer.opening_balance_note,
+        total_unpaid=float(customer.total_unpaid or 0),
+        advance_balance=float(customer.advance_balance or 0),
+    )
+
+
+@router.put("/{customer_id}/opening-balance", response_model=OpeningBalanceOut)
+def set_opening_balance(
+    customer_id: int,
+    payload: OpeningBalanceIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    What this customer already owed when the shop left its paper book.
+
+    Deliberately editable after the fact, and not locked once the customer
+    starts trading. A one-person shop has nobody to ring when the figure it
+    typed on migration day was wrong, and a balance it cannot correct is
+    worse than one it can — the change is applied as a difference, so the
+    running totals stay right either way.
+    """
+    customer = (
+        db.query(Customer)
+        .filter(Customer.id == customer_id, Customer.user_id == user.id)
+        .first()
+    )
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    apply_opening_balance(
+        customer,
+        amount=payload.amount,
+        balance_type=payload.balance_type,
+        as_of=payload.as_of,
+        reference=payload.reference,
+        note=payload.note,
+    )
+    db.commit()
+    db.refresh(customer)
+    return _opening_balance_out(customer)
+
+
+@router.post("/opening-balances", response_model=BulkOpeningBalanceOut)
+def set_opening_balances(
+    payload: BulkOpeningBalanceIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    A whole khata at once.
+
+    The reason this exists rather than letting the app send one request per
+    customer: a shop moving two hundred customers over a patchy mobile
+    connection would otherwise be halfway migrated when the signal drops,
+    with no way to tell which half. This commits once, so the migration
+    either happened or it did not.
+    """
+    ids = [entry.customer_id for entry in payload.entries]
+    owned = {
+        customer.id: customer
+        for customer in db.query(Customer).filter(
+            Customer.id.in_(ids), Customer.user_id == user.id
+        )
+    }
+
+    missing = [customer_id for customer_id in ids if customer_id not in owned]
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Not your customers: {missing[:5]}",
+        )
+
+    results = []
+    for entry in payload.entries:
+        customer = owned[entry.customer_id]
+        apply_opening_balance(
+            customer,
+            amount=entry.amount,
+            balance_type=entry.balance_type,
+            as_of=entry.as_of,
+            reference=entry.reference,
+            note=entry.note,
+        )
+        results.append(customer)
+
+    db.commit()
+    for customer in results:
+        db.refresh(customer)
+
+    return BulkOpeningBalanceOut(
+        applied=len(results),
+        results=[_opening_balance_out(customer) for customer in results],
+    )

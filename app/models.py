@@ -164,6 +164,27 @@ class Customer(Base):
     total_unpaid = Column(Numeric(12, 2), nullable=False, server_default="0")
     created_at = Column(DateTime, server_default=func.now())
 
+    # What this customer already owed (or had paid ahead) when the shop
+    # moved off its paper khata. Its own fields rather than a bill, because
+    # it is not a sale: counting it as one would inflate every takings and
+    # profit figure the shop ever sees, permanently.
+    #
+    # Always positive; `opening_balance_type` says which side it falls on.
+    opening_balance = Column(Numeric(12, 2), nullable=True)
+    # 'due' — the customer owed the shop. 'advance' — they had paid ahead.
+    opening_balance_type = Column(String(10), nullable=True)
+    # When the balance was struck in the book. Not cosmetic: a migrated debt
+    # has no bills, so this is the only thing that can tell the reminder
+    # engine how old it is — without it the shop's biggest debts would be
+    # the ones it never chases.
+    opening_balance_date = Column(DateTime, nullable=True)
+    # Where it came from in the paper book: "Khata 3, page 47". Free text,
+    # because books are numbered however the shop numbers them. Its worth is
+    # the argument at the counter a year from now.
+    opening_balance_ref = Column(String(100), nullable=True)
+    opening_balance_note = Column(Text, nullable=True)
+    opening_balance_set_at = Column(DateTime, nullable=True)
+
     # Where an automatic reminder can be sent. Optional, and most shops will
     # never fill it in — a customer without one is still listed for the owner
     # to message by hand, never silently skipped.

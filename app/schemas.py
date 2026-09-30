@@ -173,6 +173,14 @@ class CustomerOut(BaseModel):
     total_unpaid: float
     # Paid ahead and not yet used. Applied automatically to the next bill.
     advance_balance: float = 0
+    # Carried over from the shop's paper book. Exposed on every customer so
+    # a statement can open with "balance brought forward" — without it the
+    # document does not add up, and a statement that does not add up is one
+    # the customer stops believing.
+    opening_balance: Optional[float] = None
+    opening_balance_type: Optional[str] = None
+    opening_balance_date: Optional[datetime] = None
+    opening_balance_ref: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -374,3 +382,48 @@ class ReminderRunOut(BaseModel):
     shops_processed: int
     emails_sent: int
     owners_notified: int
+
+
+# ── Opening balances carried over from a paper khata ─────────────────
+
+class OpeningBalanceIn(BaseModel):
+    """
+    An amount is always positive; `balance_type` says which side it falls on.
+
+    A null amount clears the opening balance, which is how a shop undoes a
+    typo made on migration day.
+    """
+
+    amount: Optional[float] = Field(default=None, ge=0)
+    balance_type: Optional[str] = Field(default=None, pattern="^(due|advance)$")
+    as_of: Optional[datetime] = None
+    reference: Optional[str] = Field(default=None, max_length=100)
+    note: Optional[str] = None
+
+
+class OpeningBalanceEntry(OpeningBalanceIn):
+    """One line of a bulk migration."""
+
+    customer_id: int
+
+
+class BulkOpeningBalanceIn(BaseModel):
+    entries: List[OpeningBalanceEntry] = Field(min_length=1, max_length=500)
+
+
+class OpeningBalanceOut(BaseModel):
+    customer_id: int
+    amount: Optional[float] = None
+    balance_type: Optional[str] = None
+    as_of: Optional[datetime] = None
+    reference: Optional[str] = None
+    note: Optional[str] = None
+    # The customer's position after it was applied, so the app never has to
+    # recompute what the server just decided.
+    total_unpaid: float
+    advance_balance: float
+
+
+class BulkOpeningBalanceOut(BaseModel):
+    applied: int
+    results: List[OpeningBalanceOut]

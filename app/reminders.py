@@ -46,12 +46,27 @@ def oldest_unsettled_at(db: Session, customer: Customer):
     what "42 days overdue" has to mean to a shopkeeper — not the date of the
     most recent sale, which would reset the clock every time the customer
     bought a packet of tea.
+
+    A balance carried over from the shop's paper book counts too, and has
+    to: a migrated customer has no bills at all, so without this the oldest
+    debts in the shop — the ones that drove it to buy an app — would be the
+    only ones it never chased.
     """
-    return (
+    oldest_bill = (
         db.query(func.min(Bill.created_at))
         .filter(Bill.customer_id == customer.id, Bill.unbalance > 0)
         .scalar()
     )
+
+    carried_over = (
+        customer.opening_balance_date
+        if customer.opening_balance
+        and customer.opening_balance_type == "due"
+        else None
+    )
+
+    candidates = [when for when in (oldest_bill, carried_over) if when]
+    return min(candidates) if candidates else None
 
 
 def due_customers(db: Session, owner: User, now: datetime = None):
