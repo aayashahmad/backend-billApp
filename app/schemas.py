@@ -327,3 +327,50 @@ class ReportSummary(BaseModel):
     period: str
     buckets: List[ReportBucket] = []
     totals: ReportTotals
+
+
+# ── Payment reminders ────────────────────────────────────────────────
+
+class DueCustomerOut(BaseModel):
+    id: int
+    name: str
+    phone: str
+    email: Optional[str] = None
+    outstanding: float
+    days_overdue: int
+    last_reminded_at: Optional[datetime] = None
+
+
+class ReminderSettingsOut(BaseModel):
+    reminders_enabled: bool
+    reminder_min_amount: float
+    reminder_after_days: int
+    push_registered: bool
+
+
+class ShopReminderSettingsIn(BaseModel):
+    reminders_enabled: Optional[bool] = None
+    reminder_min_amount: Optional[float] = Field(default=None, ge=0)
+    # An upper bound as well as a lower one: a shop that types 3650 here has
+    # made a mistake, and silently never reminding anybody again is the worst
+    # possible way for that mistake to show up.
+    reminder_after_days: Optional[int] = Field(default=None, ge=0, le=365)
+
+
+class ReminderSettingsIn(BaseModel):
+    """Per-customer overrides. A field left out keeps its current value."""
+
+    email: Optional[str] = None
+    reminder_enabled: Optional[bool] = None
+    reminder_min_amount: Optional[float] = Field(default=None, ge=0)
+    reminder_after_days: Optional[int] = Field(default=None, ge=0, le=365)
+
+
+class PushTokenIn(BaseModel):
+    token: Optional[str] = None
+
+
+class ReminderRunOut(BaseModel):
+    shops_processed: int
+    emails_sent: int
+    owners_notified: int

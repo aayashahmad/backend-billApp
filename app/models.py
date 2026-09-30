@@ -1,6 +1,7 @@
 from typing import Optional
 
 from sqlalchemy import (
+    Boolean,
     Column,
     Integer,
     String,
@@ -10,6 +11,7 @@ from sqlalchemy import (
     ForeignKey,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -50,6 +52,25 @@ class User(Base):
     # the shop answers calls on.
     whatsapp_number = Column(String(20), nullable=True)
     bill_footer_note = Column(Text, nullable=True)
+
+    # Automatic reminders are OFF until the owner turns them on. Nothing
+    # reaches a customer because a default said so — the first message a shop
+    # sends without meaning to is the one that costs it a customer.
+    reminders_enabled = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    # Shop-wide defaults, used for every customer that has not overridden
+    # them. A balance under this, or newer than this many days, is not worth
+    # chasing.
+    reminder_min_amount = Column(
+        Numeric(12, 2), nullable=False, server_default="100", default=100
+    )
+    reminder_after_days = Column(
+        Integer, nullable=False, server_default="7", default=7
+    )
+    # Expo push token for this owner's device, so the daily run can tell them
+    # who needs chasing. One device: a shop counter has one phone.
+    expo_push_token = Column(String(255), nullable=True)
 
     # Set the first time the owner saves their bill details. NULL means they
     # have not been through setup yet, so the app routes them there on login.
@@ -142,6 +163,24 @@ class Customer(Base):
     total_amount = Column(Numeric(12, 2), nullable=False, server_default="0")
     total_unpaid = Column(Numeric(12, 2), nullable=False, server_default="0")
     created_at = Column(DateTime, server_default=func.now())
+
+    # Where an automatic reminder can be sent. Optional, and most shops will
+    # never fill it in — a customer without one is still listed for the owner
+    # to message by hand, never silently skipped.
+    email = Column(String(255), nullable=True)
+
+    # Reminder rules for this customer alone. NULL means "use the shop's
+    # setting", which is different from 0: a threshold of 0 means remind at
+    # any balance at all, and collapsing the two would start chasing people
+    # over a rupee.
+    reminder_enabled = Column(
+        Boolean, nullable=False, server_default=text("true"), default=True
+    )
+    reminder_min_amount = Column(Numeric(12, 2), nullable=True)
+    reminder_after_days = Column(Integer, nullable=True)
+    # Stops the same person being emailed every night. Also what the app
+    # shows as "last chased".
+    last_reminded_at = Column(DateTime, nullable=True)
 
     owner = relationship("User", back_populates="customers")
     bills = relationship("Bill", back_populates="customer",

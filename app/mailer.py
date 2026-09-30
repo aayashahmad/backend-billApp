@@ -217,3 +217,59 @@ def send_email_verification_code(to: str, code: str, minutes_valid: int) -> None
 </body></html>"""
 
     send_email(to, subject, text_body, html_body)
+
+
+def send_balance_reminder(
+    to: str,
+    customer_name: str,
+    shop_name: str,
+    outstanding: float,
+    days_overdue: int,
+    upi_id: str = None,
+    whatsapp: str = None,
+) -> None:
+    """
+    A polite reminder that a balance is outstanding.
+
+    Deliberately plain and short. This lands in the inbox of somebody who
+    shops at a grocery store, not a debtor in a collections process, and the
+    shop has to keep serving them tomorrow — so it states the figure, offers
+    a way to pay, and stops.
+    """
+    amount = f"Rs {outstanding:,.2f}"
+    subject = f"Balance reminder from {shop_name}"
+
+    ways = []
+    if upi_id:
+        ways.append(f"UPI: {upi_id}")
+    if whatsapp:
+        ways.append(f"WhatsApp: {whatsapp}")
+    ways_text = ("\n".join(ways) + "\n\n") if ways else ""
+
+    text_body = (
+        f"Dear {customer_name},\n\n"
+        f"This is a reminder that {amount} is outstanding on your account "
+        f"with {shop_name}, dating back {days_overdue} days.\n\n"
+        f"{ways_text}"
+        "If you have already paid, please ignore this message.\n\n"
+        f"Thank you,\n{shop_name}"
+    )
+
+    ways_html = (
+        "<p>" + "<br>".join(ways) + "</p>" if ways else ""
+    )
+    html_body = f"""\
+<html><body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;
+ color:#0F172A;line-height:1.6">
+  <p>Dear {customer_name},</p>
+  <p>This is a reminder that
+     <strong style="color:#B45309">{amount}</strong> is outstanding on your
+     account with <strong>{shop_name}</strong>, dating back
+     {days_overdue} days.</p>
+  {ways_html}
+  <p style="color:#64748B;font-size:13px">If you have already paid, please
+     ignore this message.</p>
+  <p>Thank you,<br>{shop_name}</p>
+</body></html>"""
+
+    send_email(to, subject, text_body, html_body)
